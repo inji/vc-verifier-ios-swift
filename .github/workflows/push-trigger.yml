@@ -1,0 +1,60 @@
+name: Push trigger
+
+on:
+  push:
+    branches:
+      - master
+      - develop
+      - feature/**
+      - hotfix/**
+      - 'release-**'
+  pull_request:
+    types: [opened, reopened, synchronize]
+    branches:
+      - master
+      - develop
+      - feature/**
+      - hotfix/**
+      - 'release-**'
+
+jobs:
+  build-swift:
+    runs-on: macos-26
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Environment details
+        run: |
+          xcodebuild -version
+          xcrun simctl list devices
+
+      - name: Set up Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+      - name: Build project
+        run: xcodebuild -scheme VCVerifier -destination 'generic/platform=iOS' build
+
+      - name: Run tests
+        run: xcodebuild test -scheme VCVerifier -destination 'platform=iOS Simulator,OS=latest,name=iPhone 17'
+
+      - name: Notify on Slack
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          fields: repo,message,author,commit,workflow,job
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_INJI_TEAM }}
+        if: "${{ github.event_name != 'pull_request' && failure() }}"
+
+  sonar_analysis:
+    uses: mosip/kattu/.github/workflows/swift-sonar-analysis.yml@v0.0.1
+    if: "${{ github.event_name != 'pull_request' }}"
+    with:
+      SERVICE_LOCATION: "."
+      TEST_SCHEME: "VCVerifier"
+    secrets:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      ORG_KEY: ${{ secrets.ORG_KEY }}
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_INJI_TEAM }}
